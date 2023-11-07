@@ -1,6 +1,6 @@
 #PROTOTYPE - Understanding Convexity of Representations
 # This is what i understood from thhe task you assigned me
-# I used RELU and optimiser which according to the paper helps the convexity (i don't know if there's away without using it)
+#I used RELU and optimiser which according to the paper helps the convexity (i don't know if there's away without using it)
 
 
 #import Libraries
