@@ -13,9 +13,10 @@ import torchvision
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
-from sklearn.neighbors import NearestNeighbors
 import pandas as pd
+import networkx as nx
 import numpy as np
+from scipy.spatial.distance import pdist, squareform
 
 
 # Get Device 
@@ -49,11 +50,13 @@ class MyNeuralNetwork(nn.Module):
         self.fc1 = nn.Linear(32 * 14 * 14, 128)
         self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
+    def forward(self, x, return_embedding=False):
         x = self.pool(F.relu(self.conv1(x)))
         x = x.view(-1, 32 * 14 * 14)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        embedding = F.relu(self.fc1(x))
+        if return_embedding:
+            return embedding
+        x = self.fc2(embedding)
         return x
 
 model = MyNeuralNetwork().to(device)
@@ -98,64 +101,76 @@ for epoch in range(num_epochs):
 
 # Test the model
 model.eval()  # Set the model to evaluation mode
-correct = 0
-total = 0
-extracted_features = []
-extracted_labels = []
-predicted_classes = []
 
-with torch.no_grad():
+# Extract features and labels
+extracted_embeddings = []
+extracted_labels = []
+
+with torch.no_grad(): 
+    correct = 0
+    total = 0
     for images, labels in test_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
+        extracted_embeddings.append(outputs.cpu())
+        extracted_labels.append(labels.cpu())
+
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
-        extracted_features.append(outputs.cpu())
-        extracted_labels.append(labels.cpu())
-        predicted_classes.append(predicted.cpu())
 
-print(f'Accuracy of the model on the 10000 test images: {100 * correct / total} %')
-
-# Convert list of tensors to a single tensor
-extracted_features = torch.cat(extracted_features).numpy()
+extracted_embeddings = torch.cat(extracted_embeddings).numpy()
 extracted_labels = torch.cat(extracted_labels).numpy()
-predicted_classes = torch.cat(predicted_classes).numpy()
-
-# Initialize and fit the NearestNeighbors model
-neighbors_model = NearestNeighbors(n_neighbors=6)
-neighbors_model.fit(extracted_features)
-
-# Find the nearest neighbors for each point
-distances, indices = neighbors_model.kneighbors(extracted_features)
-
-convexity = []
-# Analyze convexity
-for i, location in enumerate(indices):
-    original_class = extracted_labels[i]
-    predicted_class = predicted_classes[i]  # This is the actual predicted class
-    neighbor_classes = extracted_labels[location]
-    same_class_count = np.sum(neighbor_classes == original_class)
-    is_convex = same_class_count > len(neighbor_classes) / 2 # This calculates half of the number of neighbors to check if a point is in a region where its own class is the majority
-    print(f"Embedding {i}: Original class: {original_class}, Actual Class: {predicted_class}, Convexity: {'Yes' if is_convex else 'No'}")
-
 
 # Dimensionality reduction with t-SNE
 tsne = TSNE(n_components=2, random_state=0)
-features_2d = tsne.fit_transform(extracted_features)
+features_2d = tsne.fit_transform(extracted_embeddings)
 
-# Plotting t-SNE
+
+print(f'Accuracy of the model on the 10000 test images: {100 * correct / total} %')
+
+# Plotting
 plt.figure(figsize=(10, 10))
 for i in range(10):  # Assuming 10 classes
     indices = extracted_labels == i
-    plt.scatter(features_2d[indices, 0], features_2d[indices, 1], label=f'Class {i}')
+    plt.scatter(features_2d[indices, 0], features_2d[indices, 1], label=f'Class {i}', alpha=0.5)
 plt.legend()
+plt.title('t-SNE visualization of image features')
+plt.xlabel('Component 1')
+plt.ylabel('Component 2')
 plt.show()
 
+# Applying Euclidean Convexity
+# Function to calculate Euclidean distance efficiently
+def euclidean_distance_matrix(data):
+    return squareform(pdist(data, 'euclidean'))
 
+# Select a random batch of embeddings
+batch_size = 1000  # Adjust this based on your requirements
+if len(features_2d) > batch_size:
+    indices = np.random.choice(len(features_2d), batch_size, replace=False)
+    selected_features = features_2d[indices]
+    selected_labels = extracted_labels[indices]
+else:
+    selected_features = features_2d
+    selected_labels = extracted_labels
 
+# Create a graph
+G = nx.Graph()
 
+# Efficient calculation of distance matrix for the selected batch
+dist_matrix = euclidean_distance_matrix(selected_features)
+threshold = 6
 
+# Add nodes and edges based on Euclidean convexity for the selected batch
+for i in range(len(selected_features)):
+    for j in range(i+1, len(selected_features)):
+        if dist_matrix[i, j] < threshold:
+            G.add_edge(i, j)
 
-
-
+# Visualization
+plt.figure(figsize=(12, 12))
+pos = nx.spring_layout(G)  # Calculate positions for a better layout
+nx.draw(G, pos, node_color=[selected_labels[n] for n in G.nodes], with_labels=False, node_size=30, cmap=plt.cm.Set1)
+plt.title('Batched NetworkX Graph Visualization of Euclidean Convexity in Embeddings')
+plt.show()
