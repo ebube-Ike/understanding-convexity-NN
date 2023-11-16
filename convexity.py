@@ -78,7 +78,7 @@ test_loader = torch.utils.data.DataLoader(fashionMNIST_testset, batch_size=64, s
 
 # Loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 # Training loop
 num_epochs = 10
@@ -89,8 +89,8 @@ for epoch in range(num_epochs):
         images, labels = images.to(device), labels.to(device)
 
         # Forward pass
-        outputs = model(images)
-        loss = criterion(outputs, labels)
+        embeddings = model(images, return_embedding=True)
+        loss = criterion(embeddings, labels)
 
         # Backward pass and optimization
         optimizer.zero_grad()
@@ -111,11 +111,11 @@ with torch.no_grad():
     total = 0
     for images, labels in test_loader:
         images, labels = images.to(device), labels.to(device)
-        outputs = model(images)
-        extracted_embeddings.append(outputs.cpu())
+        embeddings = model(images, return_embedding=True)
+        extracted_embeddings.append(embeddings.cpu())
         extracted_labels.append(labels.cpu())
 
-        _, predicted = torch.max(outputs.data, 1)
+        _, predicted = torch.max(embeddings.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
