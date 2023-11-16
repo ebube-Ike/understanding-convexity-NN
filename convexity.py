@@ -169,7 +169,7 @@ for i in range(len(selected_features)):
             G.add_edge(i, j)
 
 # Visualization
-plt.figure(figsize=(12, 12))
+plt.figure(figsize=(10, 10))
 pos = nx.spring_layout(G)  # Calculate positions for a better layout
 nx.draw(G, pos, node_color=[selected_labels[n] for n in G.nodes], with_labels=False, node_size=30, cmap=plt.cm.Set1)
 plt.title('Batched NetworkX Graph Visualization of Euclidean Convexity in Embeddings')
