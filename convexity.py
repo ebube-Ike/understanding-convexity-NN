@@ -16,7 +16,6 @@ from sklearn.manifold import TSNE
 import pandas as pd
 import networkx as nx
 import numpy as np
-from scipy.spatial.distance import pdist, squareform
 
 
 # Get Device 
@@ -140,37 +139,35 @@ plt.xlabel('Component 1')
 plt.ylabel('Component 2')
 plt.show()
 
-# Applying Euclidean Convexity
-# Function to calculate Euclidean distance efficiently
-def euclidean_distance_matrix(data):
-    return squareform(pdist(data, 'euclidean'))
+# Measuring Euclidean Convexity
+model.eval()  # Ensuring the model is in evaluation mode
 
-# Select a random batch of embeddings
-batch_size = 1000  # Adjust this based on your requirements
-if len(features_2d) > batch_size:
-    indices = np.random.choice(len(features_2d), batch_size, replace=False)
-    selected_features = features_2d[indices]
-    selected_labels = extracted_labels[indices]
-else:
-    selected_features = features_2d
-    selected_labels = extracted_labels
+class_labels = range(10)  # for the 10 classes
+num_pairs = 500  # Number of pairs i want to sample per class
+num_interpolated_points = 10  # Number of points you want to generate between each pair
 
-# Create a graph
-G = nx.Graph()
+for class_label in class_labels:
+    class_counts = 0
+    class_embeddings = extracted_embeddings[extracted_labels == class_label]
 
-# Efficient calculation of distance matrix for the selected batch
-dist_matrix = euclidean_distance_matrix(selected_features)
-threshold = 6
+    for _ in range(num_pairs):
+        # Randomly select two different embeddings from the class
+        idxs = np.random.choice(len(class_embeddings), 2, replace=False)
+        zℓ1, zℓ2 = class_embeddings[idxs[0]], class_embeddings[idxs[1]]
 
-# Add nodes and edges based on Euclidean convexity for the selected batch
-for i in range(len(selected_features)):
-    for j in range(i+1, len(selected_features)):
-        if dist_matrix[i, j] < threshold:
-            G.add_edge(i, j)
+        for i in range(num_interpolated_points + 1):
+            λ = i / num_interpolated_points
+            z_prime = λ * zℓ1 + (1 - λ) * zℓ2
 
-# Visualization
-plt.figure(figsize=(10, 10))
-pos = nx.spring_layout(G)  # Calculate positions for a better layout
-nx.draw(G, pos, node_color=[selected_labels[n] for n in G.nodes], with_labels=False, node_size=30, cmap=plt.cm.Set1)
-plt.title('Batched NetworkX Graph Visualization of Euclidean Convexity in Embeddings')
-plt.show()
+            # Convert to tensor and predict
+            z_prime_tensor = torch.from_numpy(z_prime).float().unsqueeze(0).to(device)
+            predictions = model.fc2(z_prime_tensor)
+            predicted_class = torch.argmax(predictions, dim=1)
+
+            # Check if the predicted class is the same as class y
+            if predicted_class.item() == class_label:
+                class_counts += 1
+
+    # Calculate the proportion for each class
+    proportion = class_counts / ((num_interpolated_points + 1) * num_pairs)
+    print("Proportion of points predicted as class {}: {}".format(class_label, proportion))
